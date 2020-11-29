@@ -58,10 +58,9 @@ public class AkkaHttpServer {
                 )
                 .map(
                         request -> {
-                            return Patterns.ask(cacheActor, request.first(), TIMEOUT_MILLIS)
-                                    .andThen(
+                            Patterns.ask(cacheActor, request.first(), TIMEOUT_MILLIS).andThen(
                                     result -> {
-                                        return 1;
+
                                     }
                             )
                         }
