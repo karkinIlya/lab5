@@ -14,6 +14,7 @@ import akka.japi.Pair;
 import akka.pattern.Patterns;
 import akka.stream.ActorMaterializer;
 import akka.stream.javadsl.Flow;
+import akka.stream.javadsl.Keep;
 import akka.stream.javadsl.Sink;
 import akka.stream.javadsl.Source;
 import scala.concurrent.Future;
@@ -30,6 +31,10 @@ import java.util.concurrent.CompletionStage;
 public class AkkaHttpServer {
 
     public static final long TIMEOUT_MILLIS = 10000;
+    public static final int EMPTY_VALUE = 0;
+    public static final int PARALLEL_FLOWS = 1;
+    public static final String URL_FIELD = "testurl";
+    public static final String COUNT_FIELD = "count";
 
     public static void main(String[] args) throws IOException {
         System.out.println("start!");
@@ -59,10 +64,6 @@ public class AkkaHttpServer {
         return (int)(System.currentTimeMillis() - begin);
     }
 
-    private static int sum(int a, int b) {
-        return a + 
-    }
-
     private static Flow<HttpRequest, HttpResponse, NotUsed> createFlow(ActorRef cacheActor,
                                                                        ActorMaterializer materializer) {
         // PS. Пока я отходил сеть пропала и gitwatch отвалился. Заметил только сейчас :((
@@ -73,57 +74,65 @@ public class AkkaHttpServer {
                         request -> {
                             Query urlQuery = request.getUri().query();
                             Pair<String, Integer> result = new Pair<>(
-                                    urlQuery.get("testurl").get(),
-                                    Integer.parseInt(urlQuery.get("count").get())
+                                    urlQuery.get(URL_FIELD).get(),
+                                    Integer.parseInt(urlQuery.get(COUNT_FIELD).get())
                                     );
                             System.out.println(result);
                             return result;
                         }
                 )
-                .map(
-                        request -> {
-                            return Patterns
-                                    .ask(cacheActor, request.first(), Duration.ofMillis(TIMEOUT_MILLIS))
-                                    .thenCompose(
-                                            result -> {
-                                                if(isCorrect((int)result)) {
-                                                    return CompletableFuture.completedFuture(
-                                                            new Pair<>(request.first(), (int)result));
-                                                } else {
-                                                    return Source
-                                                            .single(request)
-                                                            .via(
-                                                                    Flow
-                                                                            .<Pair<String, Integer>>create()
-                                                                            .mapConcat(
-                                                                                    p -> new Vector<>(
-                                                                                            Collections.nCopies(
-                                                                                                    p.second(),
-                                                                                                    p.first()
-                                                                                            )
-                                                                                    )
-                                                                            ).mapAsync(
-                                                                                    request.second(), url -> {
-                                                                                        long beginTime = System
-                                                                                                .currentTimeMillis();
-                                                                                        asyncHttpClient()
-                                                                                                .prepareGet(url)
-                                                                                                .execute();
-                                                                                        int deltaTime = calcDeltaTime(
-                                                                                                beginTime
-                                                                                        );
-                                                                                        return CompletableFuture
-                                                                                                .completedFuture(
-                                                                                                        deltaTime
-                                                                                                );
-                                                                            })
-                                                            )
-                                                            .toMat(Sink.fold(0, ))
-                                                            .run(materializer);
-                                                }
-                                            }
-                                    );
-                        }
+                .mapAsync(
+                        PARALLEL_FLOWS,
+                        request -> Patterns
+                                .ask(cacheActor, request.first(), Duration.ofMillis(TIMEOUT_MILLIS))
+                                .thenCompose(
+                                        result ->
+                                                isCorrect((int)result)
+                                                        ? CompletableFuture.completedFuture(
+                                                                new Pair<>(request.first(), (int)result))
+                                                        : Source
+                                                        .single(request)
+                                                        .via(
+                                                                Flow
+                                                                        .<Pair<String, Integer>>create()
+                                                                        .mapConcat(
+                                                                                p -> new Vector<>(
+                                                                                        Collections.nCopies(
+                                                                                                p.second(),
+                                                                                                p.first()
+                                                                                        )
+                                                                                )
+                                                                        ).mapAsync(
+                                                                        request.second(), url -> {
+                                                                            long beginTime = System
+                                                                                    .currentTimeMillis();
+                                                                            asyncHttpClient()
+                                                                                    .prepareGet(url)
+                                                                                    .execute();
+                                                                            int deltaTime = calcDeltaTime(
+                                                                                    beginTime
+                                                                            );
+                                                                            return CompletableFuture
+                                                                                    .completedFuture(
+                                                                                            deltaTime
+                                                                                    );
+                                                                        })
+                                                        )
+                                                        .toMat(
+                                                                Sink.fold(
+                                                                        EMPTY_VALUE,
+                                                                        Integer::sum
+                                                                ),
+                                                                Keep.right()
+                                                        )
+                                                        .run(materializer)
+                                                        .thenApply(
+                                                                elem -> new Pair<>(
+                                                                        request.first(),
+                                                                        elem / request.second()
+                                                                )
+                                                        )
+                                )
                 )
                 .map(
                         request -> {
