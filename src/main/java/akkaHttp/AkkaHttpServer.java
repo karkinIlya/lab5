@@ -106,12 +106,12 @@ public class AkkaHttpServer {
                                                                         request.second(), url -> {
                                                                             long beginTime = System
                                                                                     .currentTimeMillis();
+                                                                            System.out.println(beginTime);
                                                                             asyncHttpClient()
                                                                                     .prepareGet(url)
                                                                                     .execute();
-                                                                            int deltaTime = calcDeltaTime(
-                                                                                    beginTime
-                                                                            );
+                                                                            int deltaTime = calcDeltaTime(beginTime);
+                                                                            System.out.println(deltaTime);
                                                                             return CompletableFuture
                                                                                     .completedFuture(
                                                                                             deltaTime
