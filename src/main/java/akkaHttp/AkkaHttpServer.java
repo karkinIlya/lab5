@@ -103,20 +103,21 @@ public class AkkaHttpServer {
                                                                                         )
                                                                                 )
                                                                         ).mapAsync(
-                                                                        request.second(), url -> {
-                                                                            long beginTime = System
-                                                                                    .currentTimeMillis();
-                                                                            System.out.println(beginTime);
-                                                                            asyncHttpClient()
-                                                                                    .prepareGet(url)
-                                                                                    .execute();
-                                                                            int deltaTime = calcDeltaTime(beginTime);
-                                                                            System.out.println(deltaTime);
-                                                                            return CompletableFuture
-                                                                                    .completedFuture(
-                                                                                            deltaTime
+                                                                                request.second(), url -> {
+                                                                                    long beginTime = System
+                                                                                            .currentTimeMillis();
+                                                                                    asyncHttpClient()
+                                                                                            .prepareGet(url)
+                                                                                            .execute();
+                                                                                    int deltaTime = calcDeltaTime(
+                                                                                            beginTime
                                                                                     );
-                                                                        })
+                                                                                    return CompletableFuture
+                                                                                            .completedFuture(
+                                                                                                    deltaTime
+                                                                                            );
+                                                                                }
+                                                                        )
                                                         )
                                                         .toMat(
                                                                 Sink.fold(
