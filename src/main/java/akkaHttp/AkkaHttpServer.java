@@ -43,7 +43,8 @@ public class AkkaHttpServer {
     }
 
     private static Flow<HttpRequest, HttpResponse, NotUsed> createFlow(Http http, ActorRef cacheActor) {
-        // PS Пока я отходил соединение отвалилось и 
+        // PS. Пока я отходил сеть пропала и gitwatch отвалился. Заметил только сейчас :((
+        // При необходимости могу показать локальную историю (не знаю как выгрузить ее в гит)
         return Flow
                 .of(HttpRequest.class)
                 .map(
