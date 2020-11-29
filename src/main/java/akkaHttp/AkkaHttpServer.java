@@ -14,13 +14,16 @@ import akka.japi.Pair;
 import akka.pattern.Patterns;
 import akka.stream.ActorMaterializer;
 import akka.stream.javadsl.Flow;
+import akka.stream.javadsl.Sink;
 import akka.stream.javadsl.Source;
 import scala.concurrent.Future;
+import static org.asynchttpclient.Dsl.asyncHttpClient;
 
 import java.io.IOException;
 import java.time.Duration;
 import java.util.Collections;
 import java.util.List;
+import java.util.Vector;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionStage;
 
@@ -50,6 +53,14 @@ public class AkkaHttpServer {
 
     private static boolean isCorrect(int res) {
         return res >= 0;
+    }
+
+    private static int calcDeltaTime(long begin) {
+        return (int)(System.currentTimeMillis() - begin);
+    }
+
+    private static int sum(int a, int b) {
+        return a + 
     }
 
     private static Flow<HttpRequest, HttpResponse, NotUsed> createFlow(ActorRef cacheActor,
@@ -82,11 +93,32 @@ public class AkkaHttpServer {
                                                     return Source
                                                             .single(request)
                                                             .via(
-                                                                    Flow.<Pair<String, Integer>>create().mapConcat(
-                                                                            p -> new List<>(Collections.nCopies(p.second(), p.first()))
-                                                                    )
+                                                                    Flow
+                                                                            .<Pair<String, Integer>>create()
+                                                                            .mapConcat(
+                                                                                    p -> new Vector<>(
+                                                                                            Collections.nCopies(
+                                                                                                    p.second(),
+                                                                                                    p.first()
+                                                                                            )
+                                                                                    )
+                                                                            ).mapAsync(
+                                                                                    request.second(), url -> {
+                                                                                        long beginTime = System
+                                                                                                .currentTimeMillis();
+                                                                                        asyncHttpClient()
+                                                                                                .prepareGet(url)
+                                                                                                .execute();
+                                                                                        int deltaTime = calcDeltaTime(
+                                                                                                beginTime
+                                                                                        );
+                                                                                        return CompletableFuture
+                                                                                                .completedFuture(
+                                                                                                        deltaTime
+                                                                                                );
+                                                                            })
                                                             )
-                                                            .toMat(obj)
+                                                            .toMat(Sink.fold(0, ))
                                                             .run(materializer);
                                                 }
                                             }
