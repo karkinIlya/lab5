@@ -14,13 +14,19 @@ import akka.japi.Pair;
 import akka.pattern.Patterns;
 import akka.stream.ActorMaterializer;
 import akka.stream.javadsl.Flow;
+import akka.stream.javadsl.Source;
+import scala.concurrent.Future;
 
 import java.io.IOException;
+import java.time.Duration;
+import java.util.Collections;
+import java.util.List;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionStage;
 
 public class AkkaHttpServer {
 
-    public static final int TIMEOUT_MILLIS = 10000;
+    public static final long TIMEOUT_MILLIS = 10000;
 
     public static void main(String[] args) throws IOException {
         System.out.println("start!");
@@ -29,7 +35,7 @@ public class AkkaHttpServer {
         final ActorMaterializer materializer =
                 ActorMaterializer.create(system);
         ActorRef actor = system.actorOf(Props.create(CacheActor.class));
-        final Flow<HttpRequest, HttpResponse, NotUsed> routeFlow = createFlow(http, actor);
+        final Flow<HttpRequest, HttpResponse, NotUsed> routeFlow = createFlow(actor, materializer);
         final CompletionStage<ServerBinding> binding = http.bindAndHandle(
                 routeFlow,
                 ConnectHttp.toHost("localhost", 8080),
@@ -42,7 +48,12 @@ public class AkkaHttpServer {
                 .thenAccept(unbound -> system.terminate());
     }
 
-    private static Flow<HttpRequest, HttpResponse, NotUsed> createFlow(Http http, ActorRef cacheActor) {
+    private static boolean isCorrect(int res) {
+        return res >= 0;
+    }
+
+    private static Flow<HttpRequest, HttpResponse, NotUsed> createFlow(ActorRef cacheActor,
+                                                                       ActorMaterializer materializer) {
         // PS. Пока я отходил сеть пропала и gitwatch отвалился. Заметил только сейчас :((
         // При необходимости могу показать локальную историю (не знаю как выгрузить ее в гит)
         return Flow
@@ -60,11 +71,26 @@ public class AkkaHttpServer {
                 )
                 .map(
                         request -> {
-                            Patterns.ask(cacheActor, request.first(), TIMEOUT_MILLIS).andThen(
-                                    result -> {
-
-                                    }
-                            )
+                            return Patterns
+                                    .ask(cacheActor, request.first(), Duration.ofMillis(TIMEOUT_MILLIS))
+                                    .thenCompose(
+                                            result -> {
+                                                if(isCorrect((int)result)) {
+                                                    return CompletableFuture.completedFuture(
+                                                            new Pair<>(request.first(), (int)result));
+                                                } else {
+                                                    return Source
+                                                            .single(request)
+                                                            .via(
+                                                                    Flow.<Pair<String, Integer>>create().mapConcat(
+                                                                            p -> new List<>(Collections.nCopies(p.second(), p.first()))
+                                                                    )
+                                                            )
+                                                            .toMat(obj)
+                                                            .run(materializer);
+                                                }
+                                            }
+                                    );
                         }
                 )
                 .map(
